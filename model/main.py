@@ -1,101 +1,110 @@
-import gym
-import tensorflow as tf
-from tensorflow import keras
+import pygame
+import random
+import numpy as np
 
-# Define the model
-model = keras.Sequential()
-model.add(keras.layers.Dense(64, activation='relu', input_shape=(8,)))
-model.add(keras.layers.Dense(64, activation='relu'))
-model.add(keras.layers.Dense(4, activation='linear'))
+from keras.models import Sequential
+from keras.layers import Dense
+from keras.optimizers import Adam
 
-# Compile the model
-model.compile(loss='mse', optimizer=keras.optimizers.Adam(learning_rate=0.001))
+# Constants
+GRAVITY = 0.2
+THRUST = 0.5
+SCREEN_WIDTH = 600
+SCREEN_HEIGHT = 800
 
-def select_action(state, epsilon):
-  """Select an action using an epsilon-greedy policy."""
-  if np.random.rand() < epsilon:
-    # Select a random action
-    return np.random.randint(4)
-  else:
-    # Select the action with the highest predicted Q value
-    q_values = model.predict(state)
-    return np.argmax(q_values)
+# Initialize Pygame
+pygame.init()
 
-def update_model(state, action, reward, next_state, done):
-  """Update the model based on the observed reward and the next state."""
-  # Predict the Q values for the next state
-  q_values_next = model.predict(next_state)
+# Set up the display window
+screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+pygame.display.set_caption("Lunar Lander")
 
-  # Calculate the target Q value
-  if done:
-    # The episode has ended, so the target is the final reward
-    target = reward
-  else
-    # The episode has not ended, so the target is the reward plus the maximum
-    # predicted Q value for the next state
-    target = reward + gamma * np.max(q_values_next)
+# Load the lunar lander sprite
+lander = pygame.image.load("lander.png")
 
-    # Predict the Q values for the current state
-    q_values = model.predict(state)
+# Set up the game clock
+clock = pygame.time.Clock()
 
-    # Update the Q value for the action taken
-    q_values[0][action] = target
+# Initialize the Q learning model
+model = Sequential()
+model.add(Dense(24, input_shape=(4,), activation="relu"))
+model.add(Dense(24, activation="relu"))
+model.add(Dense(2, activation="linear"))
+model.compile(loss="mse", optimizer=Adam(lr=0.001))
 
-    # Fit the model to the updated Q values
-    model.fit(state, q_values, verbose=0)
+# Initialize the game state
+done = False
+x = SCREEN_WIDTH / 2
+y = SCREEN_HEIGHT / 2
+vx = 0
+vy = 0
+fuel = 100
+score = 0
 
-# Create the Lunar Lander environment
-env = gym.make('LunarLander-v2')
+# Main game loop
+while not done:
+    # Handle user input
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            done = True
+        elif event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_UP:
+                if fuel > 0:
+                    vy -= THRUST
+                    fuel -= 1
+            elif event.key == pygame.K_LEFT:
+                vx -= THRUST
+            elif event.key == pygame.K_RIGHT:
+                vx += THRUST
 
-# Set the discount factor
-gamma = 0.99
+    # Update the game state
+    x += vx
+    y += vy
+    vy += GRAVITY
 
-# Set the exploration rate
-epsilon = 1.0
+    # Check for collision with the ground
+    if y > SCREEN_HEIGHT - 50:
+        y = SCREEN_HEIGHT - 50
+        vy = 0
+        vx = 0
+        score += 1
+        x = SCREEN_WIDTH / 2
+        y = SCREEN_HEIGHT / 2
+        vx = 0
+        vy = 0
+        fuel = 100
 
-# Set the number of episodes to run
-num_episodes = 1000
+    # Get the current game state as input for the Q learning model
+    state = np.array([x, y, vx, vy])
 
-# Keep track of the rewards
-rewards = []
+    # Use the Q learning model to predict the action to take (0 = left, 1 = right)
+    action = np.argmax(model.predict(state.reshape(1, 4)))
 
-# Run the game for the specified number of episodes
-for episode in range(num_episodes):
-  # Reset the environment and get the initial state
-  state = env.reset()
-  state = np.expand_dims(state, axis=0)
+    # Take the action
+    if action == 0:
+        vx -= THRUST
+    elif action == 1:
+        vx += THRUST
 
-  # Initialize variables for the episode
-  total_reward = 0
-  done = False
+    # Clear the screen
+    screen.fill((0, 0, 0))
 
-  # Run the game until the episode is finished
-  while not done:
-    # Select an action using the action selection function
-    action = select_action(state, epsilon)
+    # Draw the lunar lander
+    screen.blit(lander, (x, y))
 
-    # Take a step in the environment
-    next_state, reward, done, _ = env.step(action)
-    next_state = np.expand_dims(next_state, axis=0)
+    # Draw the fuel gauge
+    pygame.draw.rect(screen, (255, 0, 0), (50, 50, fuel * 2, 25))
 
-    # Update the model based on the observed reward and the next state
-    update_model(state, action, reward, next_state, done)
+    # Draw the score
+    font = pygame.font.Font(None, 36)
+    text = font.render(str(score), 1, (255, 255, 255))
+    screen.blit(text, (50, 25))
 
-    # Update the variables for the next iteration
-    state = next_state
-    total_reward += reward
+    # Update the display
+    pygame.display.flip()
 
-  # Reduce the exploration rate over time
-  epsilon = max(0.1, epsilon * 0.99)
+    # Limit the frame rate to 60 FPS
+    clock.tick(60)
 
-  # Add the episode reward to the list of rewards
-  rewards.append(total_reward)
-
-  # Print the episode reward
-  print(f'Episode {episode}: {total_reward}')
-
-# Plot the rewards
-plt.plot(rewards)
-plt.xlabel('Episode')
-plt.ylabel('Reward')
-plt.show()
+# Shut down Pygame
+pygame.quit()
